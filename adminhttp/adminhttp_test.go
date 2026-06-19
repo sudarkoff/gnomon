@@ -45,6 +45,11 @@ func TestMetricEndpoint(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Fatalf("status %d", resp.StatusCode)
 	}
+	var out []map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	if len(out) != 1 || out[0]["value"] != 100.0 {
+		t.Fatalf("bad metric payload: %+v", out)
+	}
 }
 
 func TestSeriesEndpoint(t *testing.T) {
@@ -53,5 +58,10 @@ func TestSeriesEndpoint(t *testing.T) {
 	resp, _ := http.Get(srv.URL + "/series?metric=snap")
 	if resp.StatusCode != 200 {
 		t.Fatalf("status %d", resp.StatusCode)
+	}
+	var out []map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	if len(out) != 1 || out[0]["value"] != 5.0 {
+		t.Fatalf("bad series payload: %+v", out)
 	}
 }
