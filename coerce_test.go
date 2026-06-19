@@ -1,94 +1,38 @@
 package gnomon
 
 import (
-	"math"
 	"testing"
-	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
-// coerce converts a raw database value to a float64 for use as a Sample.Value.
-// It handles the numeric types that a pgx scan into any produces.
-
-func TestCoerceInt64(t *testing.T) {
-	got, err := coerce(int64(42))
-	if err != nil {
-		t.Fatal(err)
+func TestToFloat(t *testing.T) {
+	num := pgtype.Numeric{}
+	if err := num.Scan("19.50"); err != nil {
+		t.Fatalf("scan numeric: %v", err)
 	}
-	if got != 42 {
-		t.Fatalf("want 42, got %v", got)
+	cases := []struct {
+		in   any
+		want float64
+	}{
+		{int64(5), 5},
+		{int32(7), 7},
+		{float64(3.5), 3.5},
+		{num, 19.5},
 	}
-}
-
-func TestCoerceFloat64(t *testing.T) {
-	got, err := coerce(float64(3.14))
-	if err != nil {
-		t.Fatal(err)
+	for _, c := range cases {
+		got, err := toFloat(c.in)
+		if err != nil {
+			t.Fatalf("toFloat(%v): %v", c.in, err)
+		}
+		if got != c.want {
+			t.Fatalf("toFloat(%v) = %v, want %v", c.in, got, c.want)
+		}
 	}
-	if math.Abs(got-3.14) > 1e-9 {
-		t.Fatalf("want 3.14, got %v", got)
+	if _, err := toFloat("nope"); err == nil {
+		t.Fatal("expected error for string")
 	}
-}
-
-func TestCoerceFloat32(t *testing.T) {
-	got, err := coerce(float32(1.5))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if math.Abs(got-1.5) > 1e-6 {
-		t.Fatalf("want 1.5, got %v", got)
-	}
-}
-
-func TestCoerceInt32(t *testing.T) {
-	got, err := coerce(int32(7))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != 7 {
-		t.Fatalf("want 7, got %v", got)
-	}
-}
-
-func TestCoerceInt(t *testing.T) {
-	got, err := coerce(int(99))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != 99 {
-		t.Fatalf("want 99, got %v", got)
-	}
-}
-
-func TestCoerceStringNumeric(t *testing.T) {
-	got, err := coerce("123.45")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if math.Abs(got-123.45) > 1e-9 {
-		t.Fatalf("want 123.45, got %v", got)
-	}
-}
-
-func TestCoerceStringInvalid(t *testing.T) {
-	_, err := coerce("not-a-number")
-	if err == nil {
-		t.Fatal("expected error for non-numeric string")
-	}
-}
-
-func TestCoerceNil(t *testing.T) {
-	got, err := coerce(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != 0 {
-		t.Fatalf("want 0 for nil, got %v", got)
-	}
-}
-
-func TestCoerceUnsupportedType(t *testing.T) {
-	_, err := coerce(time.Now())
-	if err == nil {
-		t.Fatal("expected error for unsupported type")
+	if _, err := toFloat(nil); err == nil {
+		t.Fatal("expected error for nil")
 	}
 }
