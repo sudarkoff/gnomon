@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/sudarkoff/gnomon"
@@ -56,11 +55,13 @@ func chartStr(c gnomon.Chart) string {
 	}
 }
 
-// NewHandler returns an http.Handler serving /metrics, /metric/{name}, /series.
+// NewHandler returns an http.Handler serving GET /metrics, GET /metric/{name},
+// and GET /series. Uses Go 1.22+ method+wildcard patterns so that paths like
+// /metric/foo/bar do not match and receive a 404.
 func NewHandler(e Engine) http.Handler {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /metrics", func(w http.ResponseWriter, r *http.Request) {
 		out := make([]metricDTO, 0)
 		for _, m := range e.Metrics() {
 			out = append(out, metricDTO{m.Name, m.Title, kindStr(m.Kind), unitStr(m.Unit), chartStr(m.Chart)})
@@ -68,8 +69,8 @@ func NewHandler(e Engine) http.Handler {
 		writeJSON(w, out)
 	})
 
-	mux.HandleFunc("/metric/", func(w http.ResponseWriter, r *http.Request) {
-		name := strings.TrimPrefix(r.URL.Path, "/metric/")
+	mux.HandleFunc("GET /metric/{name}", func(w http.ResponseWriter, r *http.Request) {
+		name := r.PathValue("name")
 		if name == "" {
 			http.Error(w, "missing metric name", http.StatusBadRequest)
 			return
@@ -88,7 +89,7 @@ func NewHandler(e Engine) http.Handler {
 		writeJSON(w, rows)
 	})
 
-	mux.HandleFunc("/series", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /series", func(w http.ResponseWriter, r *http.Request) {
 		name := r.URL.Query().Get("metric")
 		if name == "" {
 			http.Error(w, "missing metric param", http.StatusBadRequest)

@@ -39,3 +39,19 @@ func TestMetricsPreservesOrder(t *testing.T) {
 		t.Fatalf("order not preserved: %+v", got)
 	}
 }
+
+// TestRegisterBatchAtomic verifies that a batch with an intra-batch duplicate
+// returns an error AND leaves Metrics() empty -- no partial registration.
+func TestRegisterBatchAtomic(t *testing.T) {
+	g := New(nil, nil)
+	err := g.Register(
+		Metric{Name: "a", SQL: "SELECT 1"},
+		Metric{Name: "a", SQL: "SELECT 2"},
+	)
+	if err == nil {
+		t.Fatal("expected error for intra-batch duplicate")
+	}
+	if got := g.Metrics(); len(got) != 0 {
+		t.Fatalf("expected no metrics registered after failed batch, got %d: %+v", len(got), got)
+	}
+}

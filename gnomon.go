@@ -1,6 +1,6 @@
 // Package gnomon is a tiny, standardized BI layer: register business metrics
 // (live ReadThrough or daily Snapshot), then capture and serve them. It owns no
-// scheduling and no auth — the host wires Capture into its own job runner and
+// scheduling and no auth -- the host wires Capture into its own job runner and
 // wraps adminhttp with its own auth middleware.
 package gnomon
 
@@ -45,7 +45,7 @@ const (
 )
 
 // Metric is a single registered metric. For Snapshot kind, SQL must return a
-// `value` column and may return a `dimension` column. For ReadThrough kind, SQL
+// value column and may return a dimension column. For ReadThrough kind, SQL
 // may return arbitrary columns.
 type Metric struct {
 	Name  string
@@ -95,9 +95,13 @@ func New(data DataSource, store Store) *Gnomon {
 	return &Gnomon{data: data, store: store, byName: map[string]Metric{}}
 }
 
-// Register validates and adds metrics. Names must be unique and non-empty; SQL
-// must be non-empty.
+// Register validates and adds metrics in a single atomic operation. Names must
+// be unique (against existing registrations AND within the batch itself) and
+// non-empty; SQL must be non-empty. If any metric in the batch fails validation,
+// no metrics from the batch are registered.
 func (g *Gnomon) Register(ms ...Metric) error {
+	// First pass: validate ALL metrics before mutating anything.
+	seen := make(map[string]struct{}, len(ms))
 	for _, m := range ms {
 		if m.Name == "" {
 			return fmt.Errorf("gnomon: metric name must not be empty")
@@ -108,6 +112,13 @@ func (g *Gnomon) Register(ms ...Metric) error {
 		if _, dup := g.byName[m.Name]; dup {
 			return fmt.Errorf("gnomon: duplicate metric name %q", m.Name)
 		}
+		if _, dup := seen[m.Name]; dup {
+			return fmt.Errorf("gnomon: duplicate metric name %q in batch", m.Name)
+		}
+		seen[m.Name] = struct{}{}
+	}
+	// Second pass: commit only after all validations pass.
+	for _, m := range ms {
 		g.byName[m.Name] = m
 		g.order = append(g.order, m.Name)
 	}
@@ -124,8 +135,12 @@ func (g *Gnomon) Metrics() []Metric {
 }
 
 // Capture runs every registered Snapshot metric's SQL, parses the rows into
-// samples, and upserts them stamped with `on`. ReadThrough metrics are skipped.
+// samples, and upserts them stamped with on. ReadThrough metrics are skipped.
 // One metric's failure does not abort the rest; all errors are joined.
+//
+// A snapshot metric is all-or-nothing per capture: if any row fails to parse,
+// that metric's entire sample set for the day is skipped and the error is
+// joined (other metrics still capture).
 func (g *Gnomon) Capture(ctx context.Context, on time.Time) error {
 	var errs []error
 	for _, name := range g.order {

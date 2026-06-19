@@ -2,6 +2,7 @@ package gnomon
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 )
@@ -24,11 +25,15 @@ type capturedCall struct {
 }
 
 type fakeStore struct {
-	calls  []capturedCall
-	series []Point
+	calls    []capturedCall
+	series   []Point
+	failFor  string // if non-empty, UpsertSnapshots returns an error for this metric name
 }
 
 func (f *fakeStore) UpsertSnapshots(_ context.Context, _ time.Time, metric string, s []Sample) error {
+	if f.failFor != "" && metric == f.failFor {
+		return errors.New("store: injected failure for " + metric)
+	}
 	f.calls = append(f.calls, capturedCall{metric, s})
 	return nil
 }
@@ -86,5 +91,29 @@ func TestCaptureJoinsErrors(t *testing.T) {
 	// the good metric still got captured
 	if len(store.calls) != 1 || store.calls[0].metric != "ok" {
 		t.Fatalf("good metric should still capture: %+v", store.calls)
+	}
+}
+
+// TestCaptureStoreError verifies that when UpsertSnapshots fails for one metric,
+// Capture returns a non-nil joined error AND still attempts to capture the other
+// (good) metric.
+func TestCaptureStoreError(t *testing.T) {
+	data := fakeData{rows: map[string][]Row{
+		"SQL_A": {{"value": int64(1)}},
+		"SQL_B": {{"value": int64(2)}},
+	}}
+	store := &fakeStore{failFor: "a"}
+	g := New(data, store)
+	_ = g.Register(
+		Metric{Name: "a", SQL: "SQL_A", Kind: Snapshot},
+		Metric{Name: "b", SQL: "SQL_B", Kind: Snapshot},
+	)
+	err := g.Capture(context.Background(), time.Now())
+	if err == nil {
+		t.Fatal("expected non-nil error when store fails for metric a")
+	}
+	// metric "b" (good) must still have been captured despite "a" failing
+	if len(store.calls) != 1 || store.calls[0].metric != "b" {
+		t.Fatalf("expected metric b to be captured despite a failing; got calls: %+v", store.calls)
 	}
 }

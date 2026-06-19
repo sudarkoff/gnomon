@@ -69,6 +69,20 @@ func TestMetricEndpoint(t *testing.T) {
 	}
 }
 
+// TestMetricEndpointDeepPath verifies that /metric/foo/bar returns 404 (does
+// not match the {name} wildcard which only matches a single path segment).
+func TestMetricEndpointDeepPath(t *testing.T) {
+	srv := httptest.NewServer(NewHandler(fakeEngine{}))
+	defer srv.Close()
+	resp, err := http.Get(srv.URL + "/metric/foo/bar")
+	if err != nil {
+		t.Fatalf("request error: %v", err)
+	}
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("want 404 for /metric/foo/bar, got %d", resp.StatusCode)
+	}
+}
+
 func TestSeriesEndpoint(t *testing.T) {
 	srv := httptest.NewServer(NewHandler(fakeEngine{}))
 	defer srv.Close()
@@ -84,7 +98,7 @@ func TestSeriesEndpoint(t *testing.T) {
 }
 
 // TestMetricEndpointErrorCodes verifies that error types map to the correct
-// HTTP status codes in the /metric/ handler.
+// HTTP status codes in the /metric/{name} handler.
 func TestMetricEndpointErrorCodes(t *testing.T) {
 	unknownErr := fmt.Errorf("%w: %q", gnomon.ErrUnknownMetric, "gone")
 	backingErr := errors.New("db connection refused")
