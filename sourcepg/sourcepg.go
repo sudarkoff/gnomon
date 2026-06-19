@@ -35,7 +35,11 @@ func (s *Store) Query(ctx context.Context, sql string) ([]gnomon.Row, error) {
 }
 
 // UpsertSnapshots writes (or overwrites) the day's samples for a metric.
+// An empty samples slice is a no-op.
 func (s *Store) UpsertSnapshots(ctx context.Context, on time.Time, metric string, samples []gnomon.Sample) error {
+	if len(samples) == 0 {
+		return nil
+	}
 	batch := &pgx.Batch{}
 	for _, sm := range samples {
 		batch.Queue(
@@ -57,6 +61,9 @@ func (s *Store) UpsertSnapshots(ctx context.Context, on time.Time, metric string
 }
 
 // ReadSeries returns stored points for a metric within [from, to], ordered by day.
+// Note: from and to are compared against a DATE column; they are interpreted in
+// their own time.Location. Callers should pass UTC-based times to avoid
+// off-by-one-day boundary surprises.
 func (s *Store) ReadSeries(ctx context.Context, metric string, from, to time.Time) ([]gnomon.Point, error) {
 	rows, err := s.pool.Query(ctx,
 		`SELECT captured_on, dimension, value

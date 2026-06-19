@@ -11,6 +11,14 @@ import (
 	"time"
 )
 
+// ErrUnknownMetric is returned by Query and Series when the requested metric
+// name has not been registered.
+var ErrUnknownMetric = errors.New("gnomon: unknown metric")
+
+// ErrWrongKind is returned by Query when called on a Snapshot metric, or by
+// Series when called on a ReadThrough metric.
+var ErrWrongKind = errors.New("gnomon: wrong metric kind")
+
 type Kind int
 
 const (
@@ -147,10 +155,10 @@ func (g *Gnomon) Capture(ctx context.Context, on time.Time) error {
 func (g *Gnomon) Query(ctx context.Context, name string) ([]Row, error) {
 	m, ok := g.byName[name]
 	if !ok {
-		return nil, fmt.Errorf("gnomon: unknown metric %q", name)
+		return nil, fmt.Errorf("%w: %q", ErrUnknownMetric, name)
 	}
 	if m.Kind != ReadThrough {
-		return nil, fmt.Errorf("gnomon: metric %q is not ReadThrough", name)
+		return nil, fmt.Errorf("%w: %q", ErrWrongKind, name)
 	}
 	return g.data.Query(ctx, m.SQL)
 }
@@ -159,10 +167,10 @@ func (g *Gnomon) Query(ctx context.Context, name string) ([]Row, error) {
 func (g *Gnomon) Series(ctx context.Context, name string, from, to time.Time) ([]Point, error) {
 	m, ok := g.byName[name]
 	if !ok {
-		return nil, fmt.Errorf("gnomon: unknown metric %q", name)
+		return nil, fmt.Errorf("%w: %q", ErrUnknownMetric, name)
 	}
 	if m.Kind != Snapshot {
-		return nil, fmt.Errorf("gnomon: metric %q is not Snapshot", name)
+		return nil, fmt.Errorf("%w: %q", ErrWrongKind, name)
 	}
 	return g.store.ReadSeries(ctx, name, from, to)
 }

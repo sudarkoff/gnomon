@@ -6,6 +6,7 @@ package adminhttp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -75,7 +76,13 @@ func NewHandler(e Engine) http.Handler {
 		}
 		rows, err := e.Query(r.Context(), name)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusNotFound)
+			if errors.Is(err, gnomon.ErrUnknownMetric) {
+				http.Error(w, err.Error(), http.StatusNotFound)
+			} else if errors.Is(err, gnomon.ErrWrongKind) {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+			} else {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
 			return
 		}
 		writeJSON(w, rows)
@@ -87,11 +94,25 @@ func NewHandler(e Engine) http.Handler {
 			http.Error(w, "missing metric param", http.StatusBadRequest)
 			return
 		}
-		to := parseDay(r.URL.Query().Get("to"), time.Now().UTC())
-		from := parseDay(r.URL.Query().Get("from"), to.AddDate(0, 0, -90))
+		to, err := parseDayParam(r.URL.Query().Get("to"), time.Now().UTC())
+		if err != nil {
+			http.Error(w, "invalid 'to' date: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		from, err := parseDayParam(r.URL.Query().Get("from"), to.AddDate(0, 0, -90))
+		if err != nil {
+			http.Error(w, "invalid 'from' date: "+err.Error(), http.StatusBadRequest)
+			return
+		}
 		pts, err := e.Series(r.Context(), name, from, to)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusNotFound)
+			if errors.Is(err, gnomon.ErrUnknownMetric) {
+				http.Error(w, err.Error(), http.StatusNotFound)
+			} else if errors.Is(err, gnomon.ErrWrongKind) {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+			} else {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
 			return
 		}
 		if pts == nil {
@@ -103,15 +124,18 @@ func NewHandler(e Engine) http.Handler {
 	return mux
 }
 
-func parseDay(s string, def time.Time) time.Time {
+// parseDayParam parses an optional date query param. If s is empty, def is
+// returned. If s is non-empty but not a valid YYYY-MM-DD date, an error is
+// returned so the caller can send 400.
+func parseDayParam(s string, def time.Time) (time.Time, error) {
 	if s == "" {
-		return def
+		return def, nil
 	}
 	t, err := time.Parse("2006-01-02", s)
 	if err != nil {
-		return def
+		return time.Time{}, err
 	}
-	return t
+	return t, nil
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

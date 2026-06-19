@@ -19,6 +19,8 @@ func TestToFloat(t *testing.T) {
 		{int32(7), 7},
 		{float64(3.5), 3.5},
 		{num, 19.5},
+		{float32(2.5), 2.5},
+		{int(3), 3},
 	}
 	for _, c := range cases {
 		got, err := toFloat(c.in)
@@ -34,5 +36,10 @@ func TestToFloat(t *testing.T) {
 	}
 	if _, err := toFloat(nil); err == nil {
 		t.Fatal("expected error for nil")
+	}
+	// NULL pgtype.Numeric (zero value) should return an error.
+	nullNum := pgtype.Numeric{} // zero value: Valid=false, which means NULL
+	if _, err := toFloat(nullNum); err == nil {
+		t.Fatal("expected error for NULL pgtype.Numeric")
 	}
 }

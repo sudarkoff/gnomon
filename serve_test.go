@@ -43,3 +43,13 @@ func TestSeries(t *testing.T) {
 		t.Fatal("expected error for unknown metric")
 	}
 }
+
+// TestSeriesOnReadThroughReturnsError asserts that calling Series on a
+// ReadThrough metric returns an error (symmetric guard with Query on Snapshot).
+func TestSeriesOnReadThroughReturnsError(t *testing.T) {
+	g := New(fakeData{}, &fakeStore{})
+	_ = g.Register(Metric{Name: "rt", SQL: "SELECT 1", Kind: ReadThrough})
+	if _, err := g.Series(context.Background(), "rt", time.Time{}, time.Time{}); err == nil {
+		t.Fatal("expected error calling Series on a ReadThrough metric")
+	}
+}
