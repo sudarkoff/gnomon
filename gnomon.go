@@ -6,6 +6,7 @@ package gnomon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -112,4 +113,51 @@ func (g *Gnomon) Metrics() []Metric {
 		out = append(out, g.byName[name])
 	}
 	return out
+}
+
+// Capture runs every registered Snapshot metric's SQL, parses the rows into
+// samples, and upserts them stamped with `on`. ReadThrough metrics are skipped.
+// One metric's failure does not abort the rest; all errors are joined.
+func (g *Gnomon) Capture(ctx context.Context, on time.Time) error {
+	var errs []error
+	for _, name := range g.order {
+		m := g.byName[name]
+		if m.Kind != Snapshot {
+			continue
+		}
+		rows, err := g.data.Query(ctx, m.SQL)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("gnomon: query metric %q: %w", name, err))
+			continue
+		}
+		samples, err := rowsToSamples(rows)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("gnomon: parse metric %q: %w", name, err))
+			continue
+		}
+		if err := g.store.UpsertSnapshots(ctx, on, name, samples); err != nil {
+			errs = append(errs, fmt.Errorf("gnomon: store metric %q: %w", name, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+func rowsToSamples(rows []Row) ([]Sample, error) {
+	out := make([]Sample, 0, len(rows))
+	for _, r := range rows {
+		raw, ok := r["value"]
+		if !ok {
+			return nil, fmt.Errorf("gnomon: snapshot row missing 'value' column")
+		}
+		v, err := toFloat(raw)
+		if err != nil {
+			return nil, err
+		}
+		dim := ""
+		if d, ok := r["dimension"]; ok && d != nil {
+			dim = fmt.Sprintf("%v", d)
+		}
+		out = append(out, Sample{Dimension: dim, Value: v})
+	}
+	return out, nil
 }
