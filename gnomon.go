@@ -142,6 +142,31 @@ func (g *Gnomon) Capture(ctx context.Context, on time.Time) error {
 	return errors.Join(errs...)
 }
 
+// Query runs a ReadThrough metric and returns its rows. It errors if the metric
+// is unknown or is not a ReadThrough metric.
+func (g *Gnomon) Query(ctx context.Context, name string) ([]Row, error) {
+	m, ok := g.byName[name]
+	if !ok {
+		return nil, fmt.Errorf("gnomon: unknown metric %q", name)
+	}
+	if m.Kind != ReadThrough {
+		return nil, fmt.Errorf("gnomon: metric %q is not ReadThrough", name)
+	}
+	return g.data.Query(ctx, m.SQL)
+}
+
+// Series reads stored snapshot history for a Snapshot metric in [from, to].
+func (g *Gnomon) Series(ctx context.Context, name string, from, to time.Time) ([]Point, error) {
+	m, ok := g.byName[name]
+	if !ok {
+		return nil, fmt.Errorf("gnomon: unknown metric %q", name)
+	}
+	if m.Kind != Snapshot {
+		return nil, fmt.Errorf("gnomon: metric %q is not Snapshot", name)
+	}
+	return g.store.ReadSeries(ctx, name, from, to)
+}
+
 func rowsToSamples(rows []Row) ([]Sample, error) {
 	out := make([]Sample, 0, len(rows))
 	for _, r := range rows {
