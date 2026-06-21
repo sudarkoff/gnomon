@@ -20,12 +20,20 @@ type Engine interface {
 	Series(ctx context.Context, name string, from, to time.Time) ([]gnomon.Point, error)
 }
 
-type metricDTO struct {
+type measureDTO struct {
 	Name  string `json:"name"`
-	Title string `json:"title"`
-	Kind  string `json:"kind"`
+	Label string `json:"label,omitempty"`
 	Unit  string `json:"unit"`
-	Chart string `json:"chart"`
+}
+
+type metricDTO struct {
+	Name      string       `json:"name"`
+	Title     string       `json:"title"`
+	Kind      string       `json:"kind"`
+	Unit      string       `json:"unit"`
+	Chart     string       `json:"chart"`
+	Dimension string       `json:"dimension,omitempty"`
+	Measures  []measureDTO `json:"measures,omitempty"`
 }
 
 func kindStr(k gnomon.Kind) string {
@@ -50,6 +58,8 @@ func chartStr(c gnomon.Chart) string {
 		return "line"
 	case gnomon.Bar:
 		return "bar"
+	case gnomon.Funnel:
+		return "funnel"
 	default:
 		return "stat"
 	}
@@ -64,7 +74,19 @@ func NewHandler(e Engine) http.Handler {
 	mux.HandleFunc("GET /metrics", func(w http.ResponseWriter, r *http.Request) {
 		out := make([]metricDTO, 0)
 		for _, m := range e.Metrics() {
-			out = append(out, metricDTO{m.Name, m.Title, kindStr(m.Kind), unitStr(m.Unit), chartStr(m.Chart)})
+			ms := make([]measureDTO, 0, len(m.Measures))
+			for _, x := range m.Measures {
+				ms = append(ms, measureDTO{Name: x.Name, Label: x.Label, Unit: unitStr(x.Unit)})
+			}
+			out = append(out, metricDTO{
+				Name:      m.Name,
+				Title:     m.Title,
+				Kind:      kindStr(m.Kind),
+				Unit:      unitStr(m.Unit),
+				Chart:     chartStr(m.Chart),
+				Dimension: m.Dimension,
+				Measures:  ms,
+			})
 		}
 		writeJSON(w, out)
 	})

@@ -42,18 +42,30 @@ const (
 	Stat Chart = iota
 	Line
 	Bar
+	Funnel
 )
+
+// Measure is one plotted/displayed series within a metric: which row column to
+// read, an optional display label, and the unit to format it with.
+type Measure struct {
+	Name  string
+	Label string
+	Unit  Unit
+}
 
 // Metric is a single registered metric. For Snapshot kind, SQL must return a
 // value column and may return a dimension column. For ReadThrough kind, SQL
-// may return arbitrary columns.
+// may return arbitrary columns; Dimension names the x-axis column and Measures
+// names the columns to plot/show (in order).
 type Metric struct {
-	Name  string
-	Title string
-	Kind  Kind
-	SQL   string
-	Unit  Unit
-	Chart Chart
+	Name      string
+	Title     string
+	Kind      Kind
+	SQL       string
+	Unit      Unit
+	Chart     Chart
+	Dimension string
+	Measures  []Measure
 }
 
 // Row is one result row from a ReadThrough query (column name -> value).

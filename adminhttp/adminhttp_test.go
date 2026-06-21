@@ -172,6 +172,56 @@ func TestSeriesEndpointErrorCodes(t *testing.T) {
 	}
 }
 
+// declaredEngine returns a read-through metric that declares a dimension,
+// measures, and the funnel chart type.
+type declaredEngine struct{}
+
+func (declaredEngine) Metrics() []gnomon.Metric {
+	return []gnomon.Metric{{
+		Name: "funnel", Title: "Acquisition funnel", Kind: gnomon.ReadThrough,
+		Unit: gnomon.Count, Chart: gnomon.Funnel, Dimension: "signup_source",
+		Measures: []gnomon.Measure{
+			{Name: "signups", Label: "Signups", Unit: gnomon.Count},
+			{Name: "paying", Label: "Paying", Unit: gnomon.Count},
+		},
+	}}
+}
+func (declaredEngine) Query(_ context.Context, _ string) ([]gnomon.Row, error) {
+	return []gnomon.Row{{"signups": 10.0, "paying": 2.0}}, nil
+}
+func (declaredEngine) Series(_ context.Context, _ string, _, _ time.Time) ([]gnomon.Point, error) {
+	return nil, nil
+}
+
+func TestMetricsEndpointDeclaredShape(t *testing.T) {
+	srv := httptest.NewServer(NewHandler(declaredEngine{}))
+	defer srv.Close()
+
+	resp, _ := http.Get(srv.URL + "/metrics")
+	if resp.StatusCode != 200 {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	var out []map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	if len(out) != 1 {
+		t.Fatalf("want 1 metric, got %+v", out)
+	}
+	if out[0]["chart"] != "funnel" {
+		t.Fatalf("chart = %v, want funnel", out[0]["chart"])
+	}
+	if out[0]["dimension"] != "signup_source" {
+		t.Fatalf("dimension = %v, want signup_source", out[0]["dimension"])
+	}
+	ms, ok := out[0]["measures"].([]any)
+	if !ok || len(ms) != 2 {
+		t.Fatalf("measures = %v, want 2", out[0]["measures"])
+	}
+	m0 := ms[0].(map[string]any)
+	if m0["name"] != "signups" || m0["label"] != "Signups" || m0["unit"] != "count" {
+		t.Fatalf("measures[0] = %v", m0)
+	}
+}
+
 // TestSeriesBadDate verifies that a malformed date param returns 400.
 func TestSeriesBadDate(t *testing.T) {
 	srv := httptest.NewServer(NewHandler(fakeEngine{}))
